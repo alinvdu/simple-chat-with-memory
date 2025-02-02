@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import './App.css';
 
-const process_audio_url = ""
+const api = ""
 
 function App() {
   const [isRecording, setIsRecording] = useState(false);
@@ -10,6 +10,8 @@ function App() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
+  const mediaSourceRef = useRef(null);
+  const readerRef = useRef(null);
 
   const startRecording = async () => {
     try {
@@ -41,31 +43,56 @@ function App() {
         formData.append("file", audioBlob, "recording.mp3");
 
         try {
-          const response = await fetch(process_audio_url + "?tts=true", {
+          const response = await fetch(api + "/process_audio?tts=true", {
             method: "POST",
             body: formData
           });
-
           if (!response.ok) {
             throw new Error("Server error: " + response.statusText);
           }
-
-          // We expect an mp3 file as the response
-          const audioResponseBlob = await response.blob();
-
-          // Create a URL for the received mp3
-          const audioUrl = URL.createObjectURL(audioResponseBlob);
-
-          // Play it in the background
-          const audio = new Audio(audioUrl);
+  
+          // 🎯 Use MediaSource API to stream and play the response
+          mediaSourceRef.current = new MediaSource();
+          const audioElement = new Audio();
+          audioElement.src = URL.createObjectURL(mediaSourceRef.current);
+          document.body.appendChild(audioElement); // Ensure it's in the DOM
+  
           setIsPlaying(true);
-          audio.play();
+          audioElement.play();
 
-          audio.onended = () => {
-            // Once playback is done, reset
-            setIsPlaying(false);
-            setIsRecording(false);
-          };
+          mediaSourceRef.current.addEventListener("sourceopen", async () => {
+            const sourceBuffer = mediaSourceRef.current.addSourceBuffer("audio/mpeg");
+            const reader = response.body.getReader();
+            readerRef.current = reader;
+  
+            async function pushData() {
+              const { done, value } = await reader.read();
+              if (done && mediaSourceRef.current.readyState === "open") {
+                try {
+                  mediaSourceRef.current.endOfStream();
+                } catch (error) {
+                  console.log('error executing end of stream', error)
+                }
+                return;
+              }
+              try {
+                sourceBuffer.appendBuffer(value);
+              } catch (err) {
+                console.log('Error on buffer', err)
+              }
+              pushData();
+            }
+  
+            pushData();
+  
+            // Reset UI when playback ends
+            audioElement.onended = () => {
+              setIsPlaying(false);
+              setIsRecording(false);
+            };
+          });
+
+          window.currentAudio = audioElement;
 
         } catch (error) {
           console.error("Error sending audio:", error);
@@ -82,6 +109,22 @@ function App() {
     }
   };
 
+  const stopPlaying = () => {
+    if (window.currentAudio) {
+        if (readerRef.current) {
+          console.log('stop reader')
+          readerRef.current.cancel();
+        }
+
+        window.currentAudio.pause();
+        window.currentAudio.currentTime = 0;
+        window.currentAudio.src = "";
+    }
+
+    setIsPlaying(false);
+    fetch(api + "/stop_playing", { method: "POST" }); // Tell backend to stop streaming
+}
+
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
@@ -97,8 +140,15 @@ function App() {
           {isRecording ? "Recording..." : "Start Recording"}
         </button>
 
-          <button onClick={stopRecording} style={{ marginLeft: "1rem" }}>
-            Stop Recording
+          <button onClick={() => {
+            console.log('playing is', isPlaying)
+            if (isPlaying) {
+              stopPlaying();
+            } else {
+              stopRecording();
+            }
+          }} style={{ marginLeft: "1rem" }}>
+           {isPlaying ? "Stop Playing" : "Stop Recording"}
           </button>
       </div>
 

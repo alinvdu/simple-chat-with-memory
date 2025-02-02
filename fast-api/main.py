@@ -1,9 +1,10 @@
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 import os
 import uuid
 import aiofiles
 import tempfile
+import asyncio
 
 from openai import OpenAI
 
@@ -28,6 +29,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+stop_event = asyncio.Event()
+
+@app.post("/stop_playing")
+async def stop_playing():
+    """Signal to stop the currently playing TTS stream."""
+    stop_event.set()
+    return {"message": "Playback stopping..."}
+
 @app.get("/hello")
 def say_hello():
     return {"message": "Hello from FastAPI"}
@@ -44,6 +53,8 @@ async def process_audio(file: UploadFile = File(...), tts: bool = False):
     temp_file_name = f"{uuid.uuid4()}.{file_extension}"
     temp_dir = tempfile.gettempdir()
     temp_file_path = os.path.join(temp_dir, temp_file_name)
+
+    stop_event.clear()
 
     async with aiofiles.open(temp_file_path, 'wb') as out_file:
         content = await file.read()
@@ -71,26 +82,19 @@ async def process_audio(file: UploadFile = File(...), tts: bool = False):
 
         # 4. Optionally convert the assistant_text to TTS
         if tts:
-            # Create a temporary file to store the generated speech
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
-                temp_path = temp_file.name
+            def audio_stream():
+                """Generator function to stream TTS response in real-time."""
+                with client.audio.speech.with_streaming_response.create(
+                    model="tts-1",
+                    voice="onyx",
+                    input=text
+                ) as response:
+                    for chunk in response.iter_bytes():
+                        if stop_event.is_set():
+                            break
+                        yield chunk
 
-            # Generate speech from text using OpenAI TTS API
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice="onyx",
-                input=text
-            )
-
-            # Save the speech to the temporary file
-            response.stream_to_file(temp_path)
-
-            # Return the generated MP3 file to the client
-            return FileResponse(
-                path=temp_path,
-                media_type="audio/mpeg",
-                filename="output.mp3"
-            )
+            return StreamingResponse(audio_stream(), media_type="audio/mpeg")
         else:
             # 5. Return just the text if TTS is not requested
             return JSONResponse(
