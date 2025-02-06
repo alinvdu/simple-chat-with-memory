@@ -1,4 +1,10 @@
+body {
+  background: black;
+}
+
 .App {
+  background: black;
+  color: white;
   text-align: center;
 }
 
