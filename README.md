@@ -17,4 +17,5 @@ Simple Chat With Memory is a simple project featuring conversational agent with 
 2. Define REACT_APP_FIREBASE_API_KEY, REACT_APP_FIREBASE_AUTH_DOMAIN, REACT_APP_FIREBASE_PROJECT_ID, REACT_APP_FIREBASE_STORAGE_BUCKET, REACT_APP_FIREBASE_MESSAGING_SENDER_ID, REACT_APP_FIREBASE_APP_ID inside self-ui/.env
 3. cd self-ui -> npm install -> npm start
 4. cd fast-api -> pip install -r requirements.txt -> uvicorn main:app --reload
+5. Add serviceAccountKey.json into the root from firebase project.
 
