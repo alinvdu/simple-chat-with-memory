@@ -3,7 +3,7 @@ import './App.css';
 import LoginButton from "./components/LoginButton";
 import { useAuth } from "./auth/AuthContext";
 
-const api = "https://silver-space-pancake-97w4jq55q9v2xxxg-8000.app.github.dev"
+const api = "https://localhost:8000"
 
 function App() {
   const { token } = useAuth();
